@@ -1,0 +1,10 @@
+# Personal configuration, previous versions and local build files.
+/local/
+*.ini
+*.pdb
+*.log
+*.user
+.vs/
+.vscode/
+Thumbs.db
+Desktop.ini
