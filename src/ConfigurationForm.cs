@@ -70,6 +70,11 @@ internal sealed class ConfigurationForm : Form
     private readonly Panel editorPanel = new Panel();
     private readonly Button toggleEditor = new Button();
     private readonly TableLayoutPanel layout = new TableLayoutPanel();
+    private readonly DataGridView configuredApps = new DataGridView();
+    private readonly TabControl tabs = new TabControl();
+    private bool loadingTable;
+    private bool updatingEditor;
+    private bool scanned;
     private string loadedText;
 
     public ConfigurationForm(string configPath, Action reload)
@@ -94,7 +99,7 @@ internal sealed class ConfigurationForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         Controls.Add(layout);
 
-        var help = new Label { Dock = DockStyle.Fill, Text = "勾选软件，加入“最小化隐藏到托盘”。新增配置不会立即隐藏窗口或自动启动软件。\n按应用进程管理其窗口；探测结果和本机路径仅保存到 local 配置。", AutoSize = false };
+        var help = new Label { Dock = DockStyle.Fill, Text = "已配置软件直接从配置文件加载，未运行的软件也会显示。可在表格中编辑，再保存并应用。\n需要添加正在运行的软件时，切换到“窗口探测”。私人配置仅保存到 local。", AutoSize = false };
         layout.Controls.Add(help, 0, 0);
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         var refresh = new Button { Text = "刷新窗口列表", AutoSize = true, Height = 32 };
@@ -109,7 +114,11 @@ internal sealed class ConfigurationForm : Form
             layout.RowStyles[3].Height = editorPanel.Visible ? 250 : 0;
             toggleEditor.Text = editorPanel.Visible ? "收起配置文件" : "展开配置文件";
         };
-        toolbar.Controls.AddRange(new Control[] { refresh, add, toggleEditor });
+        var loadConfig = new Button { Text = "加载配置", AutoSize = true, Height = 32 };
+        loadConfig.Click += delegate { ReloadFromDisk(); };
+        var saveConfig = new Button { Text = "保存并应用", AutoSize = true, Height = 32 };
+        saveConfig.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "表格配置已保存并应用。"; }); };
+        toolbar.Controls.AddRange(new Control[] { loadConfig, saveConfig, toggleEditor });
         layout.Controls.Add(toolbar, 0, 1);
 
         windows.Dock = DockStyle.Fill;
@@ -120,19 +129,64 @@ internal sealed class ConfigurationForm : Form
         windows.Columns.Add("软件进程", 170);
         windows.Columns.Add("当前窗口标题", 430);
         windows.Columns.Add("配置状态", 170);
-        layout.Controls.Add(windows, 0, 2);
+        tabs.Dock = DockStyle.Fill;
+        var configuredPage = new TabPage("已配置软件");
+        var discoveryPage = new TabPage("窗口探测");
+        tabs.TabPages.AddRange(new[] { configuredPage, discoveryPage });
+        layout.Controls.Add(tabs, 0, 2);
+        configuredApps.Dock = DockStyle.Fill;
+        configuredApps.AllowUserToAddRows = false;
+        configuredApps.AllowUserToDeleteRows = false;
+        configuredApps.RowHeadersVisible = false;
+        configuredApps.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        configuredApps.MultiSelect = false;
+        configuredApps.EditMode = DataGridViewEditMode.EditOnEnter;
+        configuredApps.BackgroundColor = Color.White;
+        configuredApps.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        AddColumn("Enabled", "启用", true, 45);
+        AddColumn("Name", "软件名称", false, 160);
+        AddColumn("Exe", "软件进程", false, 190);
+        AddColumn("HideWhenMinimized", "最小化隐藏", true, 90);
+        AddColumn("HideOnLaunch", "启动后隐藏", true, 90);
+        AddColumn("AutoStart", "自动启动", true, 80);
+        AddColumn("DisableCloseButton", "禁用关闭", true, 80);
+        configuredApps.CurrentCellDirtyStateChanged += delegate {
+            if (configuredApps.IsCurrentCellDirty)
+                configuredApps.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        };
+        configuredApps.CellValueChanged += delegate(object sender, DataGridViewCellEventArgs e) {
+            if (loadingTable || e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            var row = configuredApps.Rows[e.RowIndex];
+            var column = configuredApps.Columns[e.ColumnIndex];
+            var value = row.Cells[e.ColumnIndex].Value;
+            var text = column is DataGridViewCheckBoxColumn ? (Convert.ToBoolean(value) ? "1" : "0") : Convert.ToString(value);
+            RunAction(delegate {
+                SetDraft(AppConfiguration.UpdateValue(editor.Text, (string)row.Tag, column.Name, text));
+                status.Text = "表格已修改，点击“保存并应用”使配置生效。";
+            });
+        };
+        var configuredToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 38 };
+        var editPaths = new Button { Text = "编辑路径与筛选...", AutoSize = true };
+        editPaths.Click += delegate { RunAction(EditSelectedApplication); };
+        configuredToolbar.Controls.Add(editPaths);
+        configuredPage.Controls.Add(configuredApps);
+        configuredPage.Controls.Add(configuredToolbar);
+        var discoveryToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42 };
+        discoveryToolbar.Controls.AddRange(new Control[] { refresh, add });
+        discoveryPage.Controls.Add(windows);
+        discoveryPage.Controls.Add(discoveryToolbar);
+        tabs.SelectedIndexChanged += delegate {
+            if (tabs.SelectedIndex == 1 && !scanned) RunAction(RefreshWindows);
+            else if (tabs.SelectedIndex == 0) ShowConfigurationCount();
+        };
 
         editorPanel.Dock = DockStyle.Fill;
         editorPanel.Visible = false;
         var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38 };
         var save = new Button { Text = "保存并应用配置", AutoSize = true };
-        save.Click += delegate { RunAction(delegate { SaveText(editor.Text); status.Text = "配置已保存并应用。"; }); };
+        save.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "配置已保存并应用。"; }); };
         var reread = new Button { Text = "重新读取配置", AutoSize = true };
-        reread.Click += delegate {
-            if (editor.Text != NormalizeLines(loadedText) && MessageBox.Show(this, "放弃未保存的编辑并重新读取？", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
-                return;
-            RunAction(delegate { ReadConfig(); RefreshWindows(); });
-        };
+        reread.Click += delegate { ReloadFromDisk(); };
         editorButtons.Controls.AddRange(new Control[] { save, reread });
         editor.Dock = DockStyle.Fill;
         editor.Multiline = true;
@@ -140,6 +194,17 @@ internal sealed class ConfigurationForm : Form
         editor.WordWrap = false;
         editor.AcceptsTab = true;
         editor.Font = new Font("Consolas", 10F);
+        editor.TextChanged += delegate {
+            if (updatingEditor) return;
+            var normalized = NormalizeLines(editor.Text);
+            if (normalized != editor.Text)
+            {
+                var position = editor.SelectionStart;
+                SetDraft(normalized);
+                editor.SelectionStart = Math.Min(position, editor.TextLength);
+            }
+            LoadConfigurationTable();
+        };
         editorPanel.Controls.Add(editor);
         editorPanel.Controls.Add(editorButtons);
         layout.Controls.Add(editorPanel, 0, 3);
@@ -147,7 +212,7 @@ internal sealed class ConfigurationForm : Form
         status.TextAlign = ContentAlignment.MiddleLeft;
         layout.Controls.Add(status, 0, 4);
         ReadConfig();
-        Shown += delegate { RunAction(RefreshWindows); };
+        Shown += delegate { ShowConfigurationCount(); };
         FormClosing += delegate(object sender, FormClosingEventArgs e) {
             if (editor.Text != NormalizeLines(loadedText) && MessageBox.Show(this, "有未保存的配置编辑，放弃并关闭？", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
                 e.Cancel = true;
@@ -157,7 +222,82 @@ internal sealed class ConfigurationForm : Form
     private void ReadConfig()
     {
         loadedText = File.ReadAllText(configPath, Encoding.UTF8);
-        editor.Text = NormalizeLines(loadedText);
+        SetDraft(loadedText);
+        LoadConfigurationTable();
+        scanned = false;
+    }
+
+    private void AddColumn(string key, string label, bool checkbox, int width)
+    {
+        DataGridViewColumn column = checkbox ? (DataGridViewColumn)new DataGridViewCheckBoxColumn() : new DataGridViewTextBoxColumn();
+        column.Name = key;
+        column.HeaderText = label;
+        column.FillWeight = width;
+        column.MinimumWidth = checkbox ? 65 : 110;
+        column.SortMode = DataGridViewColumnSortMode.NotSortable;
+        configuredApps.Columns.Add(column);
+    }
+
+    private void LoadConfigurationTable()
+    {
+        loadingTable = true;
+        try
+        {
+            configuredApps.Rows.Clear();
+            var ini = IniFile.Parse(editor.Text);
+            foreach (var section in ini.SectionNames.Where(name => !name.Equals("General", StringComparison.OrdinalIgnoreCase)))
+            {
+                var index = configuredApps.Rows.Add(
+                    ini.GetBool(section, "Enabled", true), ini.Get(section, "Name", section),
+                    ini.Get(section, "Exe", Path.GetFileName(ini.Get(section, "Path", ""))),
+                    ini.GetBool(section, "HideWhenMinimized", true), ini.GetBool(section, "HideOnLaunch", true),
+                    ini.GetBool(section, "AutoStart", false), ini.GetBool(section, "DisableCloseButton", true));
+                configuredApps.Rows[index].Tag = section;
+            }
+        }
+        finally { loadingTable = false; }
+        if (tabs.SelectedIndex == 0) ShowConfigurationCount();
+    }
+
+    private void ShowConfigurationCount()
+    {
+        status.Text = "已加载 " + configuredApps.Rows.Count + " 项配置（包含未运行或禁用的软件）。表格修改后需保存并应用。";
+    }
+
+    private void SetDraft(string text)
+    {
+        updatingEditor = true;
+        try { editor.Text = NormalizeLines(text); }
+        finally { updatingEditor = false; }
+        scanned = false;
+    }
+
+    private void ReloadFromDisk()
+    {
+        configuredApps.EndEdit();
+        if (editor.Text != NormalizeLines(loadedText) && MessageBox.Show(this, "放弃未保存的编辑并加载磁盘配置？", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
+            return;
+        RunAction(delegate {
+            ReadConfig();
+            tabs.SelectedIndex = 0;
+            ShowConfigurationCount();
+        });
+    }
+
+    private void EditSelectedApplication()
+    {
+        configuredApps.EndEdit();
+        if (configuredApps.CurrentRow == null) return;
+        var section = (string)configuredApps.CurrentRow.Tag;
+        using (var dialog = new ApplicationDetailsForm(IniFile.Parse(editor.Text), section))
+        {
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            var text = editor.Text;
+            foreach (var value in dialog.Values)
+                text = AppConfiguration.UpdateValue(text, section, value.Key, value.Value);
+            SetDraft(text);
+            status.Text = "路径与筛选已修改，点击“保存并应用”使配置生效。";
+        }
     }
 
     private static string NormalizeLines(string text)
@@ -182,6 +322,7 @@ internal sealed class ConfigurationForm : Form
             }
         }
         finally { windows.EndUpdate(); }
+        scanned = true;
         status.Text = "检测到 " + windows.Items.Count + " 个软件。窗口列表仅在打开或手动刷新时扫描。";
     }
 
@@ -196,7 +337,10 @@ internal sealed class ConfigurationForm : Form
         int added;
         var text = AppConfiguration.AddWindows(editor.Text, selected, out added);
         if (added > 0)
+        {
             SaveText(text);
+            tabs.SelectedIndex = 0;
+        }
         status.Text = "已加入 " + added + " 个软件；已有配置自动跳过。新增软件在最小化后隐藏到托盘。";
     }
 
@@ -211,7 +355,7 @@ internal sealed class ConfigurationForm : Form
         File.WriteAllText(configPath, text, Encoding.UTF8);
         ReadConfig();
         reload();
-        RefreshWindows();
+        if (tabs.SelectedIndex == 1) RefreshWindows();
     }
 
     private void RunAction(Action action)
@@ -220,5 +364,52 @@ internal sealed class ConfigurationForm : Form
         catch (ArgumentException) { MessageBox.Show(this, "配置格式无效，请确认检查间隔为大于 0 的整数。", Text); }
         catch (InvalidOperationException) { MessageBox.Show(this, "配置已被其他程序修改。请先重新读取配置。", Text); }
         catch (Exception) { MessageBox.Show(this, "操作未完成，请检查文件权限和配置内容。", Text); }
+    }
+}
+
+internal sealed class ApplicationDetailsForm : Form
+{
+    private readonly Dictionary<string, TextBox> fields = new Dictionary<string, TextBox>();
+    private readonly CheckBox notifications = new CheckBox { Text = "隐藏时显示通知", AutoSize = true };
+    public IEnumerable<KeyValuePair<string, string>> Values
+    {
+        get {
+            foreach (var field in fields) yield return new KeyValuePair<string, string>(field.Key, field.Value.Text);
+            yield return new KeyValuePair<string, string>("ShowNotifications", notifications.Checked ? "1" : "0");
+        }
+    }
+
+    public ApplicationDetailsForm(IniFile ini, string section)
+    {
+        Text = "编辑路径与筛选";
+        Font = new Font("Microsoft YaHei UI", 9F);
+        Size = new Size(720, 340);
+        MinimumSize = Size;
+        StartPosition = FormStartPosition.CenterParent;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 6 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var keys = new[] { "Path", "ProcessPath", "TitleContains", "IconPath" };
+        var labels = new[] { "启动文件路径", "匹配进程路径", "窗口标题包含", "图标来源文件" };
+        for (var index = 0; index < keys.Length; index++)
+        {
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
+            layout.Controls.Add(new Label { Text = labels[index], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, index);
+            var box = new TextBox { Text = ini.Get(section, keys[index], ""), Dock = DockStyle.Fill, Margin = new Padding(3, 10, 3, 3) };
+            fields.Add(keys[index], box);
+            layout.Controls.Add(box, 1, index);
+        }
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        notifications.Checked = ini.GetBool(section, "ShowNotifications", false);
+        layout.Controls.Add(notifications, 1, 4);
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var apply = new Button { Text = "应用到表格", AutoSize = true, DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        buttons.Controls.AddRange(new Control[] { apply, cancel });
+        layout.Controls.Add(buttons, 1, 5);
+        Controls.Add(layout);
+        AcceptButton = apply;
+        CancelButton = cancel;
     }
 }

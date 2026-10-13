@@ -91,4 +91,33 @@ IconPath=
     {
         return (value ?? "").Replace("\r", "").Replace("\n", "");
     }
+
+    public static string UpdateValue(string text, string section, string key, string value)
+    {
+        if (value.Contains("\r") || value.Contains("\n"))
+            throw new ArgumentException("配置值不能包含换行。");
+        var lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').ToList();
+        var current = "";
+        var insertAt = -1;
+        var replaced = false;
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var trimmed = lines[index].Trim();
+            if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+                current = trimmed.Substring(1, trimmed.Length - 2).Trim();
+            if (!current.Equals(section, StringComparison.OrdinalIgnoreCase))
+                continue;
+            insertAt = index + 1;
+            if (trimmed.StartsWith(";") || trimmed.StartsWith("#")) continue;
+            var equals = lines[index].IndexOf('=');
+            if (equals > 0 && lines[index].Substring(0, equals).Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                lines[index] = lines[index].Substring(0, equals + 1) + value;
+                replaced = true;
+            }
+        }
+        if (insertAt < 0) throw new ArgumentException("找不到对应的配置段。");
+        if (!replaced) lines.Insert(insertAt, key + "=" + value);
+        return string.Join("\r\n", lines);
+    }
 }

@@ -57,6 +57,12 @@ internal static class SmokeTests
         try { AppConfiguration.Validate("[General]\nCheckIntervalMs=0\n"); }
         catch (ArgumentException) { invalidRejected = true; }
         Check(invalidRejected, "zero polling interval must be rejected");
+        var offlineText = "[General]\r\nCheckIntervalMs=700\r\n; Preserve this comment\r\n[OfflineApp]\r\nName=Offline Example\r\nExe=MissingSyntheticProcess.exe\r\nEnabled=0\r\nCustomOption=keep\r\n[OtherApp]\r\nExe=OtherSyntheticProcess.exe\r\n";
+        var editedOffline = AppConfiguration.UpdateValue(offlineText, "OfflineApp", "Enabled", "1");
+        editedOffline = AppConfiguration.UpdateValue(editedOffline, "OfflineApp", "HideWhenMinimized", "1");
+        Check(editedOffline.Contains("; Preserve this comment") && editedOffline.Contains("CustomOption=keep"), "table updates preserve comments and unknown options");
+        Check(IniFile.Parse(editedOffline).GetBool("OfflineApp", "HideWhenMinimized", false), "table inserts missing values in the correct section");
+        Check(IniFile.Parse(editedOffline).Get("OtherApp", "Exe", "") == "OtherSyntheticProcess.exe", "other software configuration preserved");
 
         Process helper = null;
         AppTray tray = null;
@@ -137,7 +143,19 @@ internal static class SmokeTests
             // Replace discovered titles before rendering; this image is local-only test output.
             list.Items.Clear();
             list.Items.Add(new ListViewItem(new[] { "ExampleApp.exe", "Example Application", "未加入" }));
-            ((Label)typeof(ConfigurationForm).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form)).Text = "检测到 1 个软件。窗口列表仅在打开或手动刷新时扫描。";
+            var grid = (DataGridView)typeof(ConfigurationForm).GetField("configuredApps", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+            var tabs = (TabControl)typeof(ConfigurationForm).GetField("tabs", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+            Check(tabs.SelectedIndex == 0 && grid.Rows.Count == 1, "configured software table is the default view");
+            Check((string)grid.Rows[0].Tag == "ExampleApp", "disabled offline software loaded into the table");
+            grid.Rows[0].Cells["HideWhenMinimized"].Value = false;
+            Check(!IniFile.Parse(editor.Text).GetBool("ExampleApp", "HideWhenMinimized", true), "table checkbox updates the configuration text");
+            editor.Text = offlineText;
+            Check(grid.Rows.Count == 2 && (string)grid.Rows[0].Cells["Name"].Value == "Offline Example", "text edits reload all configured software including offline apps");
+            grid.Rows[0].Cells["Name"].Value = "Renamed Example";
+            Check(IniFile.Parse(editor.Text).Get("OfflineApp", "Name", "") == "Renamed Example", "table name edits update the correct section");
+            Check(editor.Text.Contains("CustomOption=keep"), "table editing retains unknown options");
+            editor.Text = original;
+            Check(editor.Lines.Length > 5, "pasted LF configuration is normalized for multiline display");
             toggle.PerformClick();
             Application.DoEvents();
             Check(panel.Visible, "editor expands");
