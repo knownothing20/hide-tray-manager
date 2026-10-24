@@ -92,6 +92,46 @@ IconPath=
         return (value ?? "").Replace("\r", "").Replace("\n", "");
     }
 
+    /// <summary>从配置文本中移除一个应用段（含其键值行）；[General] 不允许移除。</summary>
+    public static string RemoveSection(string text, string section)
+    {
+        if (section.Equals("General", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("不能移除 [General] 段。");
+        var lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+        var output = new List<string>();
+        var inTarget = false;
+        var found = false;
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+            {
+                inTarget = trimmed.Substring(1, trimmed.Length - 2).Trim().Equals(section, StringComparison.OrdinalIgnoreCase);
+                if (inTarget)
+                {
+                    found = true;
+                    continue;
+                }
+            }
+            if (inTarget)
+                continue;
+            output.Add(line);
+        }
+        if (!found)
+            throw new ArgumentException("找不到对应的配置段。");
+        // 收敛段落移除后留下的连续空行，保持配置文件整洁。
+        while (output.Count > 0 && output[0].Trim().Length == 0)
+            output.RemoveAt(0);
+        while (output.Count > 0 && output[output.Count - 1].Trim().Length == 0)
+            output.RemoveAt(output.Count - 1);
+        for (var index = output.Count - 2; index >= 0; index--)
+        {
+            if (output[index].Trim().Length == 0 && index > 0 && output[index - 1].Trim().Length == 0)
+                output.RemoveAt(index);
+        }
+        return string.Join("\r\n", output.ToArray()) + "\r\n";
+    }
+
     public static string UpdateValue(string text, string section, string key, string value)
     {
         if (value.Contains("\r") || value.Contains("\n"))

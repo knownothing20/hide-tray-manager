@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -18,6 +20,7 @@ internal sealed class WindowCandidate
 internal static class UiTheme
 {
     public static readonly Color Window = Color.FromArgb(32, 38, 49);
+    public static readonly Color Chrome = Color.FromArgb(26, 31, 40);
     public static readonly Color Surface = Color.FromArgb(39, 46, 59);
     public static readonly Color GridBack = Color.FromArgb(38, 45, 58);
     public static readonly Color GridHeader = Color.FromArgb(28, 33, 43);
@@ -38,11 +41,12 @@ internal static class UiTheme
         button.Height = 32;
         button.AutoSize = true;
         button.UseVisualStyleBackColor = false;
+        button.Cursor = Cursors.Hand;
     }
 
     public static void StyleGrid(DataGridView grid)
     {
-        grid.BackgroundColor = GridBack;
+        grid.BackgroundColor = Surface;
         grid.GridColor = Line;
         grid.BorderStyle = BorderStyle.None;
         grid.EnableHeadersVisualStyles = false;
@@ -50,7 +54,7 @@ internal static class UiTheme
         grid.ColumnHeadersDefaultCellStyle.ForeColor = Muted;
         grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = GridHeader;
         grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
-        grid.ColumnHeadersHeight = 34;
+        grid.ColumnHeadersHeight = 36;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
         grid.DefaultCellStyle.BackColor = GridBack;
         grid.DefaultCellStyle.ForeColor = Color.FromArgb(230, 234, 242);
@@ -58,24 +62,26 @@ internal static class UiTheme
         grid.DefaultCellStyle.SelectionForeColor = Text;
         grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(41, 48, 62);
         grid.AlternatingRowsDefaultCellStyle.ForeColor = Color.FromArgb(230, 234, 242);
-        grid.RowTemplate.Height = 30;
+        grid.RowTemplate.Height = 32;
     }
 
-    public static void StyleTabs(TabControl tabs)
+    public static GraphicsPath RoundPath(Rectangle bounds, int radius)
     {
-        tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-        tabs.Padding = new Point(14, 7);
-        tabs.DrawItem += delegate(object sender, DrawItemEventArgs e)
-        {
-            var page = tabs.TabPages[e.Index];
-            bool selected = e.Index == tabs.SelectedIndex;
-            using (var background = new SolidBrush(selected ? Surface : Window))
-                e.Graphics.FillRectangle(background, e.Bounds);
-            using (var underline = new Pen(selected ? Accent : Window, 2))
-                e.Graphics.DrawLine(underline, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1);
-            TextRenderer.DrawText(e.Graphics, page.Text, e.Font, e.Bounds,
-                selected ? Text : Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        };
+        var path = new GraphicsPath();
+        int diameter = Math.Max(2, Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height)));
+        path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    public static void ApplyRoundedRegion(Control control, int radius)
+    {
+        var previous = control.Region;
+        control.Region = new Region(RoundPath(new Rectangle(0, 0, control.Width, control.Height), radius));
+        if (previous != null) previous.Dispose();
     }
 }
 
@@ -134,9 +140,19 @@ internal sealed class ConfigurationForm : Form
     private readonly Label status = new Label();
     private readonly Panel editorPanel = new Panel();
     private readonly Button toggleEditor = new Button();
-    private readonly TableLayoutPanel layout = new TableLayoutPanel();
     private readonly DataGridView configuredApps = new DataGridView();
-    private readonly TabControl tabs = new TabControl();
+    private readonly Panel contentCard = new Panel();
+    private readonly Panel configuredPage = new Panel();
+    private readonly Panel discoveryPage = new Panel();
+    private readonly Label pageTitle = new Label();
+    private readonly Label pageDescription = new Label();
+    private readonly FlowLayoutPanel actionsFlow = new FlowLayoutPanel();
+    private readonly Button editPaths = new Button { Text = "编辑路径与筛选..." };
+    private readonly Button removeButton = new Button { Text = "移除所选软件" };
+    private readonly Button refreshButton = new Button { Text = "刷新窗口列表" };
+    private readonly Button addButton = new Button { Text = "加入最小化托盘" };
+    private readonly List<NavButton> navButtons = new List<NavButton>();
+    private int activePage;
     private bool loadingTable;
     private bool updatingEditor;
     private bool scanned;
@@ -149,65 +165,206 @@ internal sealed class ConfigurationForm : Form
         Text = "Hide Tray Manager · 配置与窗口探测";
         Font = new Font("Microsoft YaHei UI", 9F);
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(960, 650);
-        MinimumSize = new Size(780, 530);
-        AutoScaleMode = AutoScaleMode.Dpi;
+        Size = new Size(980, 680);
+        FormBorderStyle = FormBorderStyle.None;
+        MaximizeBox = false;
+        MinimizeBox = false;
         BackColor = UiTheme.Window;
         ForeColor = UiTheme.Text;
 
-        layout.Dock = DockStyle.Fill;
-        layout.Padding = new Padding(16);
-        layout.ColumnCount = 1;
-        layout.RowCount = 5;
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        Controls.Add(layout);
+        BuildTitleBar();
+        BuildSidebar();
+        BuildBottomBar();
+        BuildContent();
 
-        var help = new Label { Dock = DockStyle.Fill, Text = "已配置软件直接从配置文件加载，未运行的软件也会显示。可在表格中编辑，再保存并应用。\n需要添加正在运行的软件时，切换到“窗口探测”。私人配置仅保存到 local。", AutoSize = false, ForeColor = UiTheme.Muted };
-        layout.Controls.Add(help, 0, 0);
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = UiTheme.Window };
-        var refresh = new Button { Text = "刷新窗口列表", AutoSize = true, Height = 32 };
-        UiTheme.StyleButton(refresh, false);
-        refresh.Click += delegate { RunAction(RefreshWindows); };
-        var add = new Button { Text = "加入最小化托盘", AutoSize = true, Height = 32 };
-        UiTheme.StyleButton(add, true);
-        add.Click += delegate { RunAction(AddSelected); };
+        SizeChanged += delegate { UiTheme.ApplyRoundedRegion(this, 12); };
+        ReadConfig();
+        Shown += delegate { ShowPage(0); };
+        FormClosing += delegate(object sender, FormClosingEventArgs e) {
+            if (editor.Text != NormalizeLines(loadedText) && MessageBox.Show(this, "有未保存的配置编辑，放弃并关闭？", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
+                e.Cancel = true;
+        };
+    }
+
+    private void BuildTitleBar()
+    {
+        var titleBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = UiTheme.Chrome };
+        var title = new Label {
+            Dock = DockStyle.Fill, Text = "  Hide Tray Manager · 配置",
+            ForeColor = UiTheme.Text, TextAlign = ContentAlignment.MiddleLeft
+        };
+        title.Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold);
+        var close = new Button {
+            Text = "×", Dock = DockStyle.Right, Width = 44, FlatStyle = FlatStyle.Flat,
+            ForeColor = UiTheme.Muted, BackColor = UiTheme.Chrome, TabStop = false, Cursor = Cursors.Hand
+        };
+        close.FlatAppearance.BorderSize = 0;
+        close.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 17, 35);
+        close.MouseEnter += delegate { close.ForeColor = Color.White; };
+        close.MouseLeave += delegate { close.ForeColor = UiTheme.Muted; };
+        close.Click += delegate { Close(); };
+        titleBar.Controls.Add(title);
+        titleBar.Controls.Add(close);
+        titleBar.MouseDown += delegate(object sender, MouseEventArgs e) {
+            if (e.Button == MouseButtons.Left) DragWindow(Handle);
+        };
+        title.MouseDown += delegate(object sender, MouseEventArgs e) {
+            if (e.Button == MouseButtons.Left) DragWindow(Handle);
+        };
+        Controls.Add(titleBar);
+    }
+
+    private static void DragWindow(IntPtr handle)
+    {
+        User32.ReleaseCapture();
+        User32.SendMessage(handle, 0xA1, IntPtr.Zero, new IntPtr(2));
+    }
+
+    private NavButton CreateNavButton(string caption, int pageIndex)
+    {
+        var button = new NavButton { Dock = DockStyle.Top, Height = 46, Caption = caption };
+        button.Click += delegate { ShowPage(pageIndex); };
+        navButtons.Add(button);
+        return button;
+    }
+
+    private void BuildSidebar()
+    {
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = 168, BackColor = UiTheme.Chrome, Padding = new Padding(10, 14, 10, 10) };
+        var footer = new Label {
+            Dock = DockStyle.Bottom, Height = 40, Text = "私人配置仅保存到 local",
+            ForeColor = Color.FromArgb(110, 119, 136), TextAlign = ContentAlignment.BottomLeft,
+            Padding = new Padding(8, 0, 0, 4)
+        };
+        sidebar.Controls.Add(footer);
+        sidebar.Controls.Add(CreateNavButton("已配置软件", 0));
+        sidebar.Controls.Add(CreateNavButton("窗口探测", 1));
+        Controls.Add(sidebar);
+    }
+
+    private void BuildBottomBar()
+    {
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = UiTheme.Chrome };
+        status.Dock = DockStyle.Fill;
+        status.TextAlign = ContentAlignment.MiddleLeft;
+        status.ForeColor = UiTheme.Muted;
+        status.Padding = new Padding(16, 0, 12, 0);
+        var actions = new FlowLayoutPanel {
+            Dock = DockStyle.Right, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, Padding = new Padding(0, 12, 12, 12), BackColor = UiTheme.Chrome
+        };
+        var loadConfig = new Button { Text = "加载配置", AutoSize = true };
+        UiTheme.StyleButton(loadConfig, false);
+        loadConfig.Click += delegate { ReloadFromDisk(); };
         toggleEditor.Text = "展开配置文件";
         UiTheme.StyleButton(toggleEditor, false);
         toggleEditor.Click += delegate {
             editorPanel.Visible = !editorPanel.Visible;
-            layout.RowStyles[3].Height = editorPanel.Visible ? 250 : 0;
+            editorPanel.Height = editorPanel.Visible ? 272 : 0;
             toggleEditor.Text = editorPanel.Visible ? "收起配置文件" : "展开配置文件";
         };
-        var loadConfig = new Button { Text = "加载配置", AutoSize = true, Height = 32 };
-        UiTheme.StyleButton(loadConfig, false);
-        loadConfig.Click += delegate { ReloadFromDisk(); };
-        var saveConfig = new Button { Text = "保存并应用", AutoSize = true, Height = 32 };
+        var saveConfig = new Button { Text = "保存并应用", AutoSize = true };
         UiTheme.StyleButton(saveConfig, true);
         saveConfig.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "表格配置已保存并应用。"; }); };
-        toolbar.Controls.AddRange(new Control[] { loadConfig, saveConfig, toggleEditor });
-        layout.Controls.Add(toolbar, 0, 1);
+        actions.Controls.AddRange(new Control[] { loadConfig, toggleEditor, saveConfig });
+        bottom.Controls.Add(status);
+        bottom.Controls.Add(actions);
+        Controls.Add(bottom);
+    }
 
-        windows.Dock = DockStyle.Fill;
-        windows.View = View.Details;
-        windows.CheckBoxes = true;
-        windows.FullRowSelect = true;
-        windows.GridLines = false;
-        windows.BackColor = UiTheme.GridBack;
-        windows.ForeColor = Color.FromArgb(230, 234, 242);
-        windows.BorderStyle = BorderStyle.None;
-        windows.Columns.Add("软件进程", 170);
-        windows.Columns.Add("当前窗口标题", 430);
-        windows.Columns.Add("配置状态", 170);
-        tabs.Dock = DockStyle.Fill;
-        UiTheme.StyleTabs(tabs);
-        var configuredPage = new TabPage("已配置软件") { BackColor = UiTheme.Window };
-        var discoveryPage = new TabPage("窗口探测") { BackColor = UiTheme.Window };
-        tabs.TabPages.AddRange(new[] { configuredPage, discoveryPage });
-        layout.Controls.Add(tabs, 0, 2);
+    private void BuildContent()
+    {
+        var content = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Window, Padding = new Padding(20, 14, 20, 12) };
+
+        var header = new Panel { Dock = DockStyle.Top, Height = 72 };
+        pageTitle.Dock = DockStyle.Top;
+        pageTitle.Height = 34;
+        pageTitle.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
+        pageTitle.ForeColor = UiTheme.Text;
+        pageDescription.Dock = DockStyle.Fill;
+        pageDescription.ForeColor = UiTheme.Muted;
+        pageDescription.TextAlign = ContentAlignment.BottomLeft;
+        actionsFlow.Dock = DockStyle.Right;
+        actionsFlow.Width = 300;
+        actionsFlow.WrapContents = false;
+        actionsFlow.Padding = new Padding(0, 8, 0, 0);
+        actionsFlow.BackColor = UiTheme.Window;
+        UiTheme.StyleButton(editPaths, false);
+        editPaths.Click += delegate { RunAction(EditSelectedApplication); };
+        UiTheme.StyleButton(removeButton, false);
+        removeButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(96, 48, 48);
+        removeButton.Click += delegate { RunAction(RemoveSelectedApplication); };
+        UiTheme.StyleButton(refreshButton, false);
+        refreshButton.Click += delegate { RunAction(RefreshWindows); };
+        UiTheme.StyleButton(addButton, true);
+        addButton.Click += delegate { RunAction(AddSelected); };
+        header.Controls.Add(pageDescription);
+        header.Controls.Add(pageTitle);
+        header.Controls.Add(actionsFlow);
+
+        BuildConfiguredPage();
+        BuildDiscoveryPage();
+
+        editorPanel.Dock = DockStyle.Bottom;
+        editorPanel.Height = 0;
+        editorPanel.Visible = false;
+        editorPanel.BackColor = UiTheme.Surface;
+        editorPanel.Padding = new Padding(1);
+        editorPanel.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(editorPanel, 10); };
+        var editorHeader = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = UiTheme.GridHeader, Padding = new Padding(14, 0, 12, 0) };
+        var editorTitle = new Label {
+            Dock = DockStyle.Fill, Text = "配置文件（INI）", ForeColor = UiTheme.Text,
+            TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold)
+        };
+        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, BackColor = UiTheme.GridHeader, Padding = new Padding(0, 8, 0, 6) };
+        var reread = new Button { Text = "重新读取配置", AutoSize = true };
+        UiTheme.StyleButton(reread, false);
+        reread.Click += delegate { ReloadFromDisk(); };
+        editorButtons.Controls.Add(reread);
+        editorHeader.Controls.Add(editorTitle);
+        editorHeader.Controls.Add(editorButtons);
+        editor.Dock = DockStyle.Fill;
+        editor.Multiline = true;
+        editor.ScrollBars = ScrollBars.Both;
+        editor.WordWrap = false;
+        editor.AcceptsTab = true;
+        editor.Font = new Font("Consolas", 10F);
+        editor.BackColor = Color.FromArgb(27, 32, 43);
+        editor.ForeColor = Color.FromArgb(230, 234, 242);
+        editor.BorderStyle = BorderStyle.None;
+        editor.Margin = new Padding(0);
+        editor.TextChanged += delegate {
+            if (updatingEditor) return;
+            var normalized = NormalizeLines(editor.Text);
+            if (normalized != editor.Text)
+            {
+                var position = editor.SelectionStart;
+                SetDraft(normalized);
+                editor.SelectionStart = Math.Min(position, editor.TextLength);
+            }
+            LoadConfigurationTable();
+        };
+        editorPanel.Controls.Add(editor);
+        editorPanel.Controls.Add(editorHeader);
+
+        contentCard.Dock = DockStyle.Fill;
+        contentCard.BackColor = UiTheme.Surface;
+        contentCard.Padding = new Padding(12);
+        contentCard.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(contentCard, 10); };
+        configuredPage.Dock = DockStyle.Fill;
+        discoveryPage.Dock = DockStyle.Fill;
+        discoveryPage.Visible = false;
+        contentCard.Controls.Add(discoveryPage);
+        contentCard.Controls.Add(configuredPage);
+
+        content.Controls.Add(contentCard);
+        content.Controls.Add(editorPanel);
+        content.Controls.Add(header);
+        Controls.Add(content);
+    }
+
+    private void BuildConfiguredPage()
+    {
         configuredApps.Dock = DockStyle.Fill;
         configuredApps.AllowUserToAddRows = false;
         configuredApps.AllowUserToDeleteRows = false;
@@ -239,66 +396,48 @@ internal sealed class ConfigurationForm : Form
                 status.Text = "表格已修改，点击“保存并应用”使配置生效。";
             });
         };
-        var configuredToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, BackColor = UiTheme.Window };
-        var editPaths = new Button { Text = "编辑路径与筛选...", AutoSize = true };
-        UiTheme.StyleButton(editPaths, false);
-        editPaths.Click += delegate { RunAction(EditSelectedApplication); };
-        configuredToolbar.Controls.Add(editPaths);
-        configuredPage.Controls.Add(configuredApps);
-        configuredPage.Controls.Add(configuredToolbar);
-        var discoveryToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 46, BackColor = UiTheme.Window };
-        discoveryToolbar.Controls.AddRange(new Control[] { refresh, add });
-        discoveryPage.Controls.Add(windows);
-        discoveryPage.Controls.Add(discoveryToolbar);
-        tabs.SelectedIndexChanged += delegate {
-            if (tabs.SelectedIndex == 1 && !scanned) RunAction(RefreshWindows);
-            else if (tabs.SelectedIndex == 0) ShowConfigurationCount();
-        };
 
-        editorPanel.Dock = DockStyle.Fill;
-        editorPanel.Visible = false;
-        editorPanel.BackColor = UiTheme.Window;
-        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 42, BackColor = UiTheme.Window };
-        var save = new Button { Text = "保存并应用配置", AutoSize = true };
-        UiTheme.StyleButton(save, true);
-        save.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "配置已保存并应用。"; }); };
-        var reread = new Button { Text = "重新读取配置", AutoSize = true };
-        UiTheme.StyleButton(reread, false);
-        reread.Click += delegate { ReloadFromDisk(); };
-        editorButtons.Controls.AddRange(new Control[] { save, reread });
-        editor.Dock = DockStyle.Fill;
-        editor.Multiline = true;
-        editor.ScrollBars = ScrollBars.Both;
-        editor.WordWrap = false;
-        editor.AcceptsTab = true;
-        editor.Font = new Font("Consolas", 10F);
-        editor.BackColor = Color.FromArgb(27, 32, 43);
-        editor.ForeColor = Color.FromArgb(230, 234, 242);
-        editor.BorderStyle = BorderStyle.FixedSingle;
-        editor.TextChanged += delegate {
-            if (updatingEditor) return;
-            var normalized = NormalizeLines(editor.Text);
-            if (normalized != editor.Text)
-            {
-                var position = editor.SelectionStart;
-                SetDraft(normalized);
-                editor.SelectionStart = Math.Min(position, editor.TextLength);
-            }
-            LoadConfigurationTable();
-        };
-        editorPanel.Controls.Add(editor);
-        editorPanel.Controls.Add(editorButtons);
-        layout.Controls.Add(editorPanel, 0, 3);
-        status.Dock = DockStyle.Fill;
-        status.TextAlign = ContentAlignment.MiddleLeft;
-        status.ForeColor = UiTheme.Muted;
-        layout.Controls.Add(status, 0, 4);
-        ReadConfig();
-        Shown += delegate { ShowConfigurationCount(); };
-        FormClosing += delegate(object sender, FormClosingEventArgs e) {
-            if (editor.Text != NormalizeLines(loadedText) && MessageBox.Show(this, "有未保存的配置编辑，放弃并关闭？", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
-                e.Cancel = true;
-        };
+        var gridMenu = new ContextMenuStrip();
+        gridMenu.Items.Add("编辑路径与筛选...", null, delegate { RunAction(EditSelectedApplication); });
+        gridMenu.Items.Add("移除所选软件", null, delegate { RunAction(RemoveSelectedApplication); });
+        configuredApps.ContextMenuStrip = gridMenu;
+        configuredPage.Controls.Add(configuredApps);
+    }
+
+    private void BuildDiscoveryPage()
+    {
+        windows.Dock = DockStyle.Fill;
+        windows.View = View.Details;
+        windows.CheckBoxes = true;
+        windows.FullRowSelect = true;
+        windows.GridLines = false;
+        windows.BackColor = UiTheme.GridBack;
+        windows.ForeColor = Color.FromArgb(230, 234, 242);
+        windows.BorderStyle = BorderStyle.None;
+        windows.Columns.Add("软件进程", 170);
+        windows.Columns.Add("当前窗口标题", 430);
+        windows.Columns.Add("配置状态", 170);
+        discoveryPage.Controls.Add(windows);
+    }
+
+    private void ShowPage(int index)
+    {
+        activePage = index;
+        for (var i = 0; i < navButtons.Count; i++)
+            navButtons[i].Selected = i == index;
+        configuredPage.Visible = index == 0;
+        discoveryPage.Visible = index == 1;
+        pageTitle.Text = index == 0 ? "已配置软件" : "窗口探测";
+        pageDescription.Text = index == 0
+            ? "表格直接读取配置文件，未运行或已禁用的软件也会列出；改动需保存并应用。"
+            : "勾选要托管的窗口后加入；列表仅在进入本页或手动刷新时扫描。";
+        actionsFlow.Controls.Clear();
+        actionsFlow.Controls.AddRange(index == 0
+            ? new Control[] { editPaths, removeButton }
+            : new Control[] { refreshButton, addButton });
+        if (index == 0) ShowConfigurationCount();
+        else if (!scanned) RunAction(RefreshWindows);
+        Invalidate(true);
     }
 
     private void ReadConfig()
@@ -338,12 +477,12 @@ internal sealed class ConfigurationForm : Form
             }
         }
         finally { loadingTable = false; }
-        if (tabs.SelectedIndex == 0) ShowConfigurationCount();
+        if (activePage == 0 && status.Text.Length == 0) ShowConfigurationCount();
     }
 
     private void ShowConfigurationCount()
     {
-        status.Text = "已加载 " + configuredApps.Rows.Count + " 项配置（包含未运行或禁用的软件）。表格修改后需保存并应用。";
+        status.Text = "已加载 " + configuredApps.Rows.Count + " 项配置（包含未运行或禁用的软件）。修改后需保存并应用。";
     }
 
     private void SetDraft(string text)
@@ -361,7 +500,7 @@ internal sealed class ConfigurationForm : Form
             return;
         RunAction(delegate {
             ReadConfig();
-            tabs.SelectedIndex = 0;
+            ShowPage(0);
             ShowConfigurationCount();
         });
     }
@@ -380,6 +519,22 @@ internal sealed class ConfigurationForm : Form
             SetDraft(text);
             status.Text = "路径与筛选已修改，点击“保存并应用”使配置生效。";
         }
+    }
+
+    private void RemoveSelectedApplication()
+    {
+        configuredApps.EndEdit();
+        if (configuredApps.CurrentRow == null)
+        {
+            status.Text = "请先在表格中选择要移除的软件。";
+            return;
+        }
+        var section = (string)configuredApps.CurrentRow.Tag;
+        var display = Convert.ToString(configuredApps.CurrentRow.Cells["Name"].Value);
+        if (MessageBox.Show(this, "移除 “" + display + "” 的配置段？\n（只删除托管配置，不会结束进程）", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
+            return;
+        SetDraft(AppConfiguration.RemoveSection(editor.Text, section));
+        status.Text = "已移除 " + display + "，点击“保存并应用”生效。";
     }
 
     private static string NormalizeLines(string text)
@@ -421,7 +576,7 @@ internal sealed class ConfigurationForm : Form
         if (added > 0)
         {
             SaveText(text);
-            tabs.SelectedIndex = 0;
+            ShowPage(0);
         }
         status.Text = "已加入 " + added + " 个软件；已有配置自动跳过。新增软件在最小化后隐藏到托盘。";
     }
@@ -437,7 +592,7 @@ internal sealed class ConfigurationForm : Form
         File.WriteAllText(configPath, text, Encoding.UTF8);
         ReadConfig();
         reload();
-        if (tabs.SelectedIndex == 1) RefreshWindows();
+        if (activePage == 1) RefreshWindows();
     }
 
     private void RunAction(Action action)
@@ -446,6 +601,55 @@ internal sealed class ConfigurationForm : Form
         catch (ArgumentException) { MessageBox.Show(this, "配置格式无效，请确认检查间隔为大于 0 的整数。", Text); }
         catch (InvalidOperationException) { MessageBox.Show(this, "配置已被其他程序修改。请先重新读取配置。", Text); }
         catch (Exception) { MessageBox.Show(this, "操作未完成，请检查文件权限和配置内容。", Text); }
+    }
+
+    /// <summary>侧边导航按钮：选中的页面显示高亮底色与左侧强调条。</summary>
+    private sealed class NavButton : Control
+    {
+        private bool selected;
+
+        public string Caption { get; set; }
+
+        public bool Selected
+        {
+            get { return selected; }
+            set { selected = value; Invalidate(); }
+        }
+
+        public NavButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            Cursor = Cursors.Hand;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var background = selected ? UiTheme.Surface : UiTheme.Chrome;
+            using (var brush = new SolidBrush(background))
+                e.Graphics.FillRectangle(brush, ClientRectangle);
+            if (selected)
+            {
+                using (var accent = new SolidBrush(UiTheme.Accent))
+                    e.Graphics.FillRectangle(accent, 0, 10, 4, Height - 20);
+            }
+            using (var textBrush = new SolidBrush(selected ? UiTheme.Text : UiTheme.Muted))
+            {
+                var format = new StringFormat { LineAlignment = StringAlignment.Center };
+                e.Graphics.DrawString(Caption ?? "", new Font("Microsoft YaHei UI", 10F, selected ? FontStyle.Bold : FontStyle.Regular),
+                    textBrush, new RectangleF(18, 0, Width - 22, Height), format);
+            }
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (!selected)
+            {
+                selected = true;
+                Invalidate();
+            }
+        }
     }
 }
 
@@ -465,35 +669,34 @@ internal sealed class ApplicationDetailsForm : Form
     {
         Text = "编辑路径与筛选";
         Font = new Font("Microsoft YaHei UI", 9F);
-        Size = new Size(720, 340);
-        MinimumSize = Size;
+        Size = new Size(720, 360);
         StartPosition = FormStartPosition.CenterParent;
-        AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = UiTheme.Window;
         ForeColor = UiTheme.Text;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 6, BackColor = UiTheme.Window };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 6, BackColor = UiTheme.Window };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var keys = new[] { "Path", "ProcessPath", "TitleContains", "IconPath" };
         var labels = new[] { "启动文件路径", "匹配进程路径", "窗口标题包含", "图标来源文件" };
         for (var index = 0; index < keys.Length; index++)
         {
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
             layout.Controls.Add(new Label { Text = labels[index], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.Muted }, 0, index);
-            var box = new TextBox { Text = ini.Get(section, keys[index], ""), Dock = DockStyle.Fill, Margin = new Padding(3, 10, 3, 3), BackColor = Color.FromArgb(27, 32, 43), ForeColor = Color.FromArgb(230, 234, 242), BorderStyle = BorderStyle.FixedSingle };
+            var box = new TextBox { Text = ini.Get(section, keys[index], ""), Dock = DockStyle.Fill, Margin = new Padding(3, 11, 3, 3), BackColor = Color.FromArgb(27, 32, 43), ForeColor = Color.FromArgb(230, 234, 242), BorderStyle = BorderStyle.FixedSingle };
             fields.Add(keys[index], box);
             layout.Controls.Add(box, 1, index);
         }
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         notifications.Checked = ini.GetBool(section, "ShowNotifications", false);
         notifications.ForeColor = UiTheme.Text;
         layout.Controls.Add(notifications, 1, 4);
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         var apply = new Button { Text = "应用到表格", AutoSize = true, DialogResult = DialogResult.OK };
         UiTheme.StyleButton(apply, true);
         var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
         UiTheme.StyleButton(cancel, false);
-        buttons.Controls.AddRange(new Control[] { apply, cancel });
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(apply);
         layout.Controls.Add(buttons, 1, 5);
         Controls.Add(layout);
         AcceptButton = apply;

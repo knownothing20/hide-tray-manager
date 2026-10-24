@@ -144,13 +144,24 @@ internal static class SmokeTests
             list.Items.Clear();
             list.Items.Add(new ListViewItem(new[] { "ExampleApp.exe", "Example Application", "未加入" }));
             var grid = (DataGridView)typeof(ConfigurationForm).GetField("configuredApps", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
-            var tabs = (TabControl)typeof(ConfigurationForm).GetField("tabs", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
-            Check(tabs.SelectedIndex == 0 && grid.Rows.Count == 1, "configured software table is the default view");
+            var activePage = typeof(ConfigurationForm).GetField("activePage", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+            Check((int)activePage == 0 && grid.Rows.Count == 1, "configured software table is the default view");
             Check((string)grid.Rows[0].Tag == "ExampleApp", "disabled offline software loaded into the table");
             grid.Rows[0].Cells["HideWhenMinimized"].Value = false;
             Check(!IniFile.Parse(editor.Text).GetBool("ExampleApp", "HideWhenMinimized", true), "table checkbox updates the configuration text");
             editor.Text = offlineText;
             Check(grid.Rows.Count == 2 && (string)grid.Rows[0].Cells["Name"].Value == "Offline Example", "text edits reload all configured software including offline apps");
+            var removedText = AppConfiguration.RemoveSection(editor.Text, "OfflineApp");
+            var removedIni = IniFile.Parse(removedText);
+            var offlineGone = true;
+            foreach (var removedSection in removedIni.SectionNames)
+                if (removedSection.Equals("OfflineApp", StringComparison.OrdinalIgnoreCase)) offlineGone = false;
+            Check(offlineGone && removedIni.Get("OtherApp", "Exe", "") == "OtherSyntheticProcess.exe" && removedIni.Get("General", "CheckIntervalMs", "") != "",
+                "remove section drops only the target block and keeps the rest");
+            var generalRejected = false;
+            try { AppConfiguration.RemoveSection(removedText, "General"); }
+            catch (ArgumentException) { generalRejected = true; }
+            Check(generalRejected, "removing the General section is rejected");
             grid.Rows[0].Cells["Name"].Value = "Renamed Example";
             Check(IniFile.Parse(editor.Text).Get("OfflineApp", "Name", "") == "Renamed Example", "table name edits update the correct section");
             Check(editor.Text.Contains("CustomOption=keep"), "table editing retains unknown options");
