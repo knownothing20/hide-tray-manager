@@ -425,6 +425,12 @@ internal sealed class ConfigurationForm : Form
             });
         };
 
+        // 右键不会移动选中行：先选中鼠标所在行，右键菜单的“编辑/移除”才作用于所见行。
+        configuredApps.CellMouseDown += delegate(object sender, DataGridViewCellMouseEventArgs e) {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
+                configuredApps.CurrentCell = configuredApps.Rows[e.RowIndex].Cells[Math.Max(e.ColumnIndex, 1)];
+        };
+
         var gridMenu = new ContextMenuStrip();
         gridMenu.Items.Add("编辑路径与筛选...", null, delegate { RunAction(EditSelectedApplication); });
         gridMenu.Items.Add("移除所选软件", null, delegate { RunAction(RemoveSelectedApplication); });
@@ -600,15 +606,14 @@ internal sealed class ConfigurationForm : Form
         configuredApps.EndEdit();
         if (configuredApps.CurrentRow == null)
         {
-            status.Text = "请先在表格中选择要移除的软件。";
+            status.Text = "请先点击选中要移除的行（右键会自动选中所在行）。";
             return;
         }
         var section = (string)configuredApps.CurrentRow.Tag;
         var display = Convert.ToString(configuredApps.CurrentRow.Cells["Name"].Value);
-        if (MessageBox.Show(this, "移除 “" + display + "” 的配置段？\n（只删除托管配置，不会结束进程）", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
-            return;
+        // 删除的是草稿，不弹确认框：保存前点“加载配置”即可完全撤销。
         SetDraft(AppConfiguration.RemoveSection(editor.Text, section));
-        status.Text = "已移除 " + display + "，点击“保存并应用”生效。";
+        status.Text = "已移除 " + display + " —— 未保存：点“加载配置”撤销，点“保存并应用”生效。";
     }
 
     private static string NormalizeLines(string text)

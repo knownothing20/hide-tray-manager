@@ -167,6 +167,11 @@ internal static class SmokeTests
             Check(editor.Text.Contains("CustomOption=keep"), "table editing retains unknown options");
             editor.Text = original;
             Check(editor.Lines.Length > 5, "pasted LF configuration is normalized for multiline display");
+            var removeMethod = typeof(ConfigurationForm).GetMethod("RemoveSelectedApplication", BindingFlags.Instance | BindingFlags.NonPublic);
+            grid.CurrentCell = grid.Rows[0].Cells["Name"];
+            removeMethod.Invoke(form, null);
+            Check(grid.Rows.Count == 0 && !editor.Text.Contains("[ExampleApp]") && editor.Text.Contains("[General]"),
+                "removing the selected row drops that section from table and draft, General kept");
             toggle.PerformClick();
             Application.DoEvents();
             Check(panel.Visible, "editor expands");
