@@ -184,10 +184,13 @@ internal sealed class ConfigurationForm : Form
             uiScale = Math.Max(0.8f, Math.Min(dpi, fit));
         }
 
-        BuildTitleBar();
-        BuildSidebar();
-        BuildBottomBar();
+        // 停靠布局按“后添加者先处理”：内容(Fill)最先加入=最后处理=填充剩余；
+        // 标题栏最后加入=最先处理=横向占满全宽；侧栏在标题栏之下全高；底栏在侧栏右侧。
+        // 顺序错了 Fill 会摊满全窗，把表格压到侧栏/底栏下面（显示不全的根因）。
         BuildContent();
+        BuildBottomBar();
+        BuildSidebar();
+        BuildTitleBar();
 
         if (uiScale != 1f)
         {
