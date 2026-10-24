@@ -274,7 +274,10 @@ internal sealed class ConfigurationForm : Form
         status.Padding = new Padding(16, 0, 12, 0);
         var actions = new FlowLayoutPanel {
             Dock = DockStyle.Right, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, Padding = new Padding(0, 12, 12, 12), BackColor = UiTheme.Chrome
+            WrapContents = false, Padding = new Padding(0, 12, 12, 12), BackColor = UiTheme.Chrome,
+            // Dock=Right 的流式面板必须 AutoSize，否则宽度停在默认值，
+            // 高 DPI 缩放后按钮装不下会被裁掉。
+            AutoSize = true
         };
         var loadConfig = new Button { Text = "加载配置", AutoSize = true };
         UiTheme.StyleButton(loadConfig, false);
@@ -309,6 +312,7 @@ internal sealed class ConfigurationForm : Form
         pageDescription.TextAlign = ContentAlignment.BottomLeft;
         actionsFlow.Dock = DockStyle.Right;
         actionsFlow.Width = 300;
+        actionsFlow.AutoSize = true;
         actionsFlow.WrapContents = false;
         actionsFlow.Padding = new Padding(0, 8, 0, 0);
         actionsFlow.BackColor = UiTheme.Window;
@@ -339,7 +343,7 @@ internal sealed class ConfigurationForm : Form
             Dock = DockStyle.Fill, Text = "配置文件（INI）", ForeColor = UiTheme.Text,
             TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold)
         };
-        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, BackColor = UiTheme.GridHeader, Padding = new Padding(0, 8, 0, 6) };
+        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, BackColor = UiTheme.GridHeader, Padding = new Padding(0, 8, 0, 6), AutoSize = true };
         var reread = new Button { Text = "重新读取配置", AutoSize = true };
         UiTheme.StyleButton(reread, false);
         reread.Click += delegate { ReloadFromDisk(); };
@@ -461,6 +465,26 @@ internal sealed class ConfigurationForm : Form
         if (index == 0) ShowConfigurationCount();
         else if (!scanned) RunAction(RefreshWindows);
         Invalidate(true);
+    }
+
+    private bool clampingToScreen;
+
+    // 无边框窗口可被拖到屏幕边缘外，导致表格最右列/按钮"显示不全"；
+    // 位置变化时把窗口钳回当前屏幕的工作区内（Screen.FromControl 跨屏拖动时跟随目标屏）。
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        if (clampingToScreen || WindowState != FormWindowState.Normal || IsDisposed)
+            return;
+        var area = Screen.FromControl(this).WorkingArea;
+        int targetLeft = Math.Max(area.Left, Math.Min(Left, area.Right - Width));
+        int targetTop = Math.Max(area.Top, Math.Min(Top, area.Bottom - Height));
+        if (targetLeft != Left || targetTop != Top)
+        {
+            clampingToScreen = true;
+            try { Location = new Point(targetLeft, targetTop); }
+            finally { clampingToScreen = false; }
+        }
     }
 
     private void ReadConfig()
