@@ -218,9 +218,10 @@ internal sealed class ConfigurationForm : Form
         };
         title.Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold);
         var close = new Button {
-            Text = "×", Dock = DockStyle.Right, Width = 44, FlatStyle = FlatStyle.Flat,
+            Text = "×", Dock = DockStyle.Right, Width = 56, FlatStyle = FlatStyle.Flat,
             ForeColor = UiTheme.Muted, BackColor = UiTheme.Chrome, TabStop = false, Cursor = Cursors.Hand
         };
+        close.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
         close.FlatAppearance.BorderSize = 0;
         close.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 17, 35);
         close.MouseEnter += delegate { close.ForeColor = Color.White; };
@@ -267,14 +268,14 @@ internal sealed class ConfigurationForm : Form
 
     private void BuildBottomBar()
     {
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = UiTheme.Chrome };
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 74, BackColor = UiTheme.Chrome };
         status.Dock = DockStyle.Fill;
         status.TextAlign = ContentAlignment.MiddleLeft;
         status.ForeColor = UiTheme.Muted;
         status.Padding = new Padding(16, 0, 12, 0);
         var actions = new FlowLayoutPanel {
             Dock = DockStyle.Right, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, Padding = new Padding(0, 12, 12, 12), BackColor = UiTheme.Chrome,
+            WrapContents = false, Padding = new Padding(0, 18, 16, 22), BackColor = UiTheme.Chrome,
             // Dock=Right 的流式面板必须 AutoSize，否则宽度停在默认值，
             // 高 DPI 缩放后按钮装不下会被裁掉。
             AutoSize = true
@@ -300,7 +301,7 @@ internal sealed class ConfigurationForm : Form
 
     private void BuildContent()
     {
-        var content = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Window, Padding = new Padding(20, 14, 20, 12) };
+        var content = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.Window, Padding = new Padding(20, 14, 20, 16) };
 
         var header = new Panel { Dock = DockStyle.Top, Height = 72 };
         pageTitle.Dock = DockStyle.Top;
@@ -486,7 +487,7 @@ internal sealed class ConfigurationForm : Form
                 int screenY = (short)((m.LParam.ToInt32() >> 16) & 0xFFFF);
                 var client = PointToClient(new Point(screenX, screenY));
                 int barHeight = (int)(44 * uiScale);
-                int closeButtonWidth = (int)(44 * uiScale);
+                int closeButtonWidth = (int)(56 * uiScale);
                 if (client.Y >= 0 && client.Y < barHeight && client.X < Width - closeButtonWidth)
                     m.Result = (IntPtr)HitTestCaption;
             }
