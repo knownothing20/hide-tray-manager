@@ -597,6 +597,7 @@ internal sealed class ConfigurationForm : Form
             foreach (var value in dialog.Values)
                 text = AppConfiguration.UpdateValue(text, section, value.Key, value.Value);
             SetDraft(text);
+            LoadConfigurationTable();
             status.Text = "路径与筛选已修改，点击“保存并应用”使配置生效。";
         }
     }
@@ -612,7 +613,9 @@ internal sealed class ConfigurationForm : Form
         var section = (string)configuredApps.CurrentRow.Tag;
         var display = Convert.ToString(configuredApps.CurrentRow.Cells["Name"].Value);
         // 删除的是草稿，不弹确认框：保存前点“加载配置”即可完全撤销。
+        // SetDraft 抑制了编辑器的 TextChanged，表格必须显式重载，否则行还留在界面上。
         SetDraft(AppConfiguration.RemoveSection(editor.Text, section));
+        LoadConfigurationTable();
         status.Text = "已移除 " + display + " —— 未保存：点“加载配置”撤销，点“保存并应用”生效。";
     }
 
