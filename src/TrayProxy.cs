@@ -51,6 +51,8 @@ internal sealed class TrayProxyContext : ApplicationContext
         managerIcon.ContextMenuStrip = managerMenu;
         managerIcon.Visible = true;
         BuildManagerMenu();
+        // 托盘菜单打开前按最新运行状态重建（应用增减/启停即时反映）。
+        managerMenu.Opening += delegate { BuildManagerMenu(); };
 
         timer = new Timer();
         timer.Interval = checkIntervalMs;
@@ -143,26 +145,33 @@ internal sealed class TrayProxyContext : ApplicationContext
     private void BuildManagerMenu()
     {
         managerMenu.Items.Clear();
-        if (appTrays.Count == 0)
+        // 每次打开菜单时按当前运行状态重建应用区：只显示正在运行的托管软件，
+        // 未运行的不显示；每项点击即切换显示/隐藏。
+        var running = appTrays.Where(tray => tray.Status != AppStatus.NotRunning).ToList();
+        if (running.Count == 0)
         {
-            managerMenu.Items.Add(new ToolStripMenuItem("No enabled apps") { Enabled = false });
+            managerMenu.Items.Add(new ToolStripMenuItem("没有运行中的托管软件") { Enabled = false });
         }
         else
         {
-            foreach (var tray in appTrays)
-                managerMenu.Items.Add(new ToolStripMenuItem(tray.StatusLine) { Enabled = false });
+            foreach (var tray in running)
+            {
+                var captured = tray;
+                var item = new ToolStripMenuItem(captured.MenuLabel);
+                item.Click += delegate { captured.ToggleWindow(); };
+                managerMenu.Items.Add(item);
+            }
         }
 
         managerMenu.Items.Add(new ToolStripSeparator());
         managerMenu.Items.Add("配置与窗口探测...", null, delegate { OpenConfiguration(); });
-        managerMenu.Items.Add("Open config", null, delegate { Process.Start("notepad.exe", "\"" + configPath + "\""); });
-        managerMenu.Items.Add("Reload config", null, delegate {
+        managerMenu.Items.Add("打开配置文件", null, delegate { Process.Start("notepad.exe", "\"" + configPath + "\""); });
+        managerMenu.Items.Add("重新加载配置", null, delegate {
             try { LoadConfig(); }
             catch (Exception) { MessageBox.Show("配置加载失败，请检查配置格式和检查间隔。", "Hide Tray Manager"); }
         });
         managerMenu.Items.Add(new ToolStripSeparator());
-        managerMenu.Items.Add("Exit Hide Tray Manager", null, delegate { ExitThread(); });
-        UpdateManagerMenu();
+        managerMenu.Items.Add("退出 Hide Tray Manager", null, delegate { ExitThread(); });
     }
 
     private void OpenConfiguration()
@@ -177,18 +186,12 @@ internal sealed class TrayProxyContext : ApplicationContext
 
     private void UpdateManagerMenu()
     {
-        var tooltip = appTrays.Count == 0
-            ? "Hide Tray Manager - no enabled apps"
-            : TruncateTooltip("Hide Tray Manager - " + appTrays.Count + " configured app(s)");
+        var runningCount = appTrays.Count(tray => tray.Status != AppStatus.NotRunning);
+        var tooltip = runningCount == 0
+            ? "Hide Tray Manager · 无运行中的应用"
+            : TruncateTooltip("Hide Tray Manager · " + runningCount + " 个应用运行中");
         if (managerIcon.Text != tooltip)
             managerIcon.Text = tooltip;
-
-        for (var i = 0; i < appTrays.Count && i < managerMenu.Items.Count; i++)
-        {
-            var statusLine = appTrays[i].StatusLine;
-            if (managerMenu.Items[i].Text != statusLine)
-                managerMenu.Items[i].Text = statusLine;
-        }
     }
 
     protected override void Dispose(bool disposing)
@@ -239,8 +242,15 @@ internal sealed class AppTray : IDisposable
 
     public string StatusLine
     {
-        get { return app.Name + ": " + GetStatusText(); }
+        get { return app.Name + "：" + GetStatusText(); }
     }
+
+    public AppStatus Status { get { return status; } }
+
+    /// <summary>管理器菜单里的条目文案：应用名 + 当前状态，点击切换显示/隐藏。</summary>
+    public string MenuLabel { get { return app.Name + "（" + GetStatusText() + "）"; } }
+
+    public void ToggleWindow() { Toggle(); }
 
     public string ProcessName { get { return Path.GetFileNameWithoutExtension(app.Exe); } }
 
@@ -336,10 +346,10 @@ internal sealed class AppTray : IDisposable
         menu.Items.Clear();
         menu.Items.Add(new ToolStripMenuItem(StatusLine) { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Show window", null, delegate { Show(); });
-        menu.Items.Add("Hide to tray", null, delegate { Hide(); });
+        menu.Items.Add("显示窗口", null, delegate { Show(); });
+        menu.Items.Add("隐藏到托盘", null, delegate { Hide(); });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quit " + app.Name, null, delegate { CloseApp(); });
+        menu.Items.Add("退出 " + app.Name, null, delegate { CloseApp(); });
     }
 
     private void UpdateStatus()
@@ -360,13 +370,13 @@ internal sealed class AppTray : IDisposable
         switch (status)
         {
             case AppStatus.Visible:
-                return "window visible";
+                return "窗口可见";
             case AppStatus.Hidden:
-                return "hidden to tray";
+                return "已隐藏到托盘";
             case AppStatus.BackgroundOnly:
-                return "running, no matched window";
+                return "后台运行";
             default:
-                return "not running";
+                return "未运行";
         }
     }
 

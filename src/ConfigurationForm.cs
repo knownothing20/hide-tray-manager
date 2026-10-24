@@ -14,6 +14,71 @@ internal sealed class WindowCandidate
     public string ProcessPath;
 }
 
+/// <summary>配置窗口的深色主题：集中定义颜色与控件样式，和 SysFloat 的设置窗口同一观感。</summary>
+internal static class UiTheme
+{
+    public static readonly Color Window = Color.FromArgb(32, 38, 49);
+    public static readonly Color Surface = Color.FromArgb(39, 46, 59);
+    public static readonly Color GridBack = Color.FromArgb(38, 45, 58);
+    public static readonly Color GridHeader = Color.FromArgb(28, 33, 43);
+    public static readonly Color Line = Color.FromArgb(53, 62, 78);
+    public static readonly Color Text = Color.FromArgb(241, 244, 249);
+    public static readonly Color Muted = Color.FromArgb(166, 176, 193);
+    public static readonly Color Accent = Color.FromArgb(72, 145, 239);
+    public static readonly Color AccentHover = Color.FromArgb(91, 160, 248);
+
+    public static void StyleButton(Button button, bool primary)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = primary ? 0 : 1;
+        button.BackColor = primary ? Accent : Color.FromArgb(45, 53, 67);
+        button.ForeColor = primary ? Color.White : Text;
+        button.FlatAppearance.BorderColor = Line;
+        button.FlatAppearance.MouseOverBackColor = primary ? AccentHover : Color.FromArgb(55, 65, 81);
+        button.Height = 32;
+        button.AutoSize = true;
+        button.UseVisualStyleBackColor = false;
+    }
+
+    public static void StyleGrid(DataGridView grid)
+    {
+        grid.BackgroundColor = GridBack;
+        grid.GridColor = Line;
+        grid.BorderStyle = BorderStyle.None;
+        grid.EnableHeadersVisualStyles = false;
+        grid.ColumnHeadersDefaultCellStyle.BackColor = GridHeader;
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = Muted;
+        grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = GridHeader;
+        grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+        grid.ColumnHeadersHeight = 34;
+        grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        grid.DefaultCellStyle.BackColor = GridBack;
+        grid.DefaultCellStyle.ForeColor = Color.FromArgb(230, 234, 242);
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(50, 64, 90);
+        grid.DefaultCellStyle.SelectionForeColor = Text;
+        grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(41, 48, 62);
+        grid.AlternatingRowsDefaultCellStyle.ForeColor = Color.FromArgb(230, 234, 242);
+        grid.RowTemplate.Height = 30;
+    }
+
+    public static void StyleTabs(TabControl tabs)
+    {
+        tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+        tabs.Padding = new Point(14, 7);
+        tabs.DrawItem += delegate(object sender, DrawItemEventArgs e)
+        {
+            var page = tabs.TabPages[e.Index];
+            bool selected = e.Index == tabs.SelectedIndex;
+            using (var background = new SolidBrush(selected ? Surface : Window))
+                e.Graphics.FillRectangle(background, e.Bounds);
+            using (var underline = new Pen(selected ? Accent : Window, 2))
+                e.Graphics.DrawLine(underline, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1);
+            TextRenderer.DrawText(e.Graphics, page.Text, e.Font, e.Bounds,
+                selected ? Text : Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        };
+    }
+}
+
 internal static class WindowDiscovery
 {
     public static List<WindowCandidate> Scan()
@@ -87,6 +152,8 @@ internal sealed class ConfigurationForm : Form
         Size = new Size(960, 650);
         MinimumSize = new Size(780, 530);
         AutoScaleMode = AutoScaleMode.Dpi;
+        BackColor = UiTheme.Window;
+        ForeColor = UiTheme.Text;
 
         layout.Dock = DockStyle.Fill;
         layout.Padding = new Padding(16);
@@ -99,24 +166,27 @@ internal sealed class ConfigurationForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         Controls.Add(layout);
 
-        var help = new Label { Dock = DockStyle.Fill, Text = "已配置软件直接从配置文件加载，未运行的软件也会显示。可在表格中编辑，再保存并应用。\n需要添加正在运行的软件时，切换到“窗口探测”。私人配置仅保存到 local。", AutoSize = false };
+        var help = new Label { Dock = DockStyle.Fill, Text = "已配置软件直接从配置文件加载，未运行的软件也会显示。可在表格中编辑，再保存并应用。\n需要添加正在运行的软件时，切换到“窗口探测”。私人配置仅保存到 local。", AutoSize = false, ForeColor = UiTheme.Muted };
         layout.Controls.Add(help, 0, 0);
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = UiTheme.Window };
         var refresh = new Button { Text = "刷新窗口列表", AutoSize = true, Height = 32 };
+        UiTheme.StyleButton(refresh, false);
         refresh.Click += delegate { RunAction(RefreshWindows); };
         var add = new Button { Text = "加入最小化托盘", AutoSize = true, Height = 32 };
+        UiTheme.StyleButton(add, true);
         add.Click += delegate { RunAction(AddSelected); };
         toggleEditor.Text = "展开配置文件";
-        toggleEditor.AutoSize = true;
-        toggleEditor.Height = 32;
+        UiTheme.StyleButton(toggleEditor, false);
         toggleEditor.Click += delegate {
             editorPanel.Visible = !editorPanel.Visible;
             layout.RowStyles[3].Height = editorPanel.Visible ? 250 : 0;
             toggleEditor.Text = editorPanel.Visible ? "收起配置文件" : "展开配置文件";
         };
         var loadConfig = new Button { Text = "加载配置", AutoSize = true, Height = 32 };
+        UiTheme.StyleButton(loadConfig, false);
         loadConfig.Click += delegate { ReloadFromDisk(); };
         var saveConfig = new Button { Text = "保存并应用", AutoSize = true, Height = 32 };
+        UiTheme.StyleButton(saveConfig, true);
         saveConfig.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "表格配置已保存并应用。"; }); };
         toolbar.Controls.AddRange(new Control[] { loadConfig, saveConfig, toggleEditor });
         layout.Controls.Add(toolbar, 0, 1);
@@ -125,13 +195,17 @@ internal sealed class ConfigurationForm : Form
         windows.View = View.Details;
         windows.CheckBoxes = true;
         windows.FullRowSelect = true;
-        windows.GridLines = true;
+        windows.GridLines = false;
+        windows.BackColor = UiTheme.GridBack;
+        windows.ForeColor = Color.FromArgb(230, 234, 242);
+        windows.BorderStyle = BorderStyle.None;
         windows.Columns.Add("软件进程", 170);
         windows.Columns.Add("当前窗口标题", 430);
         windows.Columns.Add("配置状态", 170);
         tabs.Dock = DockStyle.Fill;
-        var configuredPage = new TabPage("已配置软件");
-        var discoveryPage = new TabPage("窗口探测");
+        UiTheme.StyleTabs(tabs);
+        var configuredPage = new TabPage("已配置软件") { BackColor = UiTheme.Window };
+        var discoveryPage = new TabPage("窗口探测") { BackColor = UiTheme.Window };
         tabs.TabPages.AddRange(new[] { configuredPage, discoveryPage });
         layout.Controls.Add(tabs, 0, 2);
         configuredApps.Dock = DockStyle.Fill;
@@ -141,8 +215,8 @@ internal sealed class ConfigurationForm : Form
         configuredApps.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         configuredApps.MultiSelect = false;
         configuredApps.EditMode = DataGridViewEditMode.EditOnEnter;
-        configuredApps.BackgroundColor = Color.White;
         configuredApps.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        UiTheme.StyleGrid(configuredApps);
         AddColumn("Enabled", "启用", true, 45);
         AddColumn("Name", "软件名称", false, 160);
         AddColumn("Exe", "软件进程", false, 190);
@@ -165,13 +239,14 @@ internal sealed class ConfigurationForm : Form
                 status.Text = "表格已修改，点击“保存并应用”使配置生效。";
             });
         };
-        var configuredToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 38 };
+        var configuredToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, BackColor = UiTheme.Window };
         var editPaths = new Button { Text = "编辑路径与筛选...", AutoSize = true };
+        UiTheme.StyleButton(editPaths, false);
         editPaths.Click += delegate { RunAction(EditSelectedApplication); };
         configuredToolbar.Controls.Add(editPaths);
         configuredPage.Controls.Add(configuredApps);
         configuredPage.Controls.Add(configuredToolbar);
-        var discoveryToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42 };
+        var discoveryToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 46, BackColor = UiTheme.Window };
         discoveryToolbar.Controls.AddRange(new Control[] { refresh, add });
         discoveryPage.Controls.Add(windows);
         discoveryPage.Controls.Add(discoveryToolbar);
@@ -182,10 +257,13 @@ internal sealed class ConfigurationForm : Form
 
         editorPanel.Dock = DockStyle.Fill;
         editorPanel.Visible = false;
-        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38 };
+        editorPanel.BackColor = UiTheme.Window;
+        var editorButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 42, BackColor = UiTheme.Window };
         var save = new Button { Text = "保存并应用配置", AutoSize = true };
+        UiTheme.StyleButton(save, true);
         save.Click += delegate { RunAction(delegate { configuredApps.EndEdit(); SaveText(editor.Text); status.Text = "配置已保存并应用。"; }); };
         var reread = new Button { Text = "重新读取配置", AutoSize = true };
+        UiTheme.StyleButton(reread, false);
         reread.Click += delegate { ReloadFromDisk(); };
         editorButtons.Controls.AddRange(new Control[] { save, reread });
         editor.Dock = DockStyle.Fill;
@@ -194,6 +272,9 @@ internal sealed class ConfigurationForm : Form
         editor.WordWrap = false;
         editor.AcceptsTab = true;
         editor.Font = new Font("Consolas", 10F);
+        editor.BackColor = Color.FromArgb(27, 32, 43);
+        editor.ForeColor = Color.FromArgb(230, 234, 242);
+        editor.BorderStyle = BorderStyle.FixedSingle;
         editor.TextChanged += delegate {
             if (updatingEditor) return;
             var normalized = NormalizeLines(editor.Text);
@@ -210,6 +291,7 @@ internal sealed class ConfigurationForm : Form
         layout.Controls.Add(editorPanel, 0, 3);
         status.Dock = DockStyle.Fill;
         status.TextAlign = ContentAlignment.MiddleLeft;
+        status.ForeColor = UiTheme.Muted;
         layout.Controls.Add(status, 0, 4);
         ReadConfig();
         Shown += delegate { ShowConfigurationCount(); };
@@ -387,7 +469,9 @@ internal sealed class ApplicationDetailsForm : Form
         MinimumSize = Size;
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 6 };
+        BackColor = UiTheme.Window;
+        ForeColor = UiTheme.Text;
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 6, BackColor = UiTheme.Window };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var keys = new[] { "Path", "ProcessPath", "TitleContains", "IconPath" };
@@ -395,17 +479,20 @@ internal sealed class ApplicationDetailsForm : Form
         for (var index = 0; index < keys.Length; index++)
         {
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
-            layout.Controls.Add(new Label { Text = labels[index], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, index);
-            var box = new TextBox { Text = ini.Get(section, keys[index], ""), Dock = DockStyle.Fill, Margin = new Padding(3, 10, 3, 3) };
+            layout.Controls.Add(new Label { Text = labels[index], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.Muted }, 0, index);
+            var box = new TextBox { Text = ini.Get(section, keys[index], ""), Dock = DockStyle.Fill, Margin = new Padding(3, 10, 3, 3), BackColor = Color.FromArgb(27, 32, 43), ForeColor = Color.FromArgb(230, 234, 242), BorderStyle = BorderStyle.FixedSingle };
             fields.Add(keys[index], box);
             layout.Controls.Add(box, 1, index);
         }
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         notifications.Checked = ini.GetBool(section, "ShowNotifications", false);
+        notifications.ForeColor = UiTheme.Text;
         layout.Controls.Add(notifications, 1, 4);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill };
         var apply = new Button { Text = "应用到表格", AutoSize = true, DialogResult = DialogResult.OK };
+        UiTheme.StyleButton(apply, true);
         var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        UiTheme.StyleButton(cancel, false);
         buttons.Controls.AddRange(new Control[] { apply, cancel });
         layout.Controls.Add(buttons, 1, 5);
         Controls.Add(layout);
