@@ -226,9 +226,21 @@ internal sealed class ConfigurationForm : Form
         close.MouseEnter += delegate { close.ForeColor = Color.White; };
         close.MouseLeave += delegate { close.ForeColor = UiTheme.Muted; };
         close.Click += delegate { Close(); };
+        // 标题条被 Label/Panel 子控件覆盖，鼠标事件到不了窗体的命中测试，
+        // 必须在子控件上发起拖动：ReleaseCapture 后发 WM_NCLBUTTONDOWN(HTCAPTION)。
+        titleBar.MouseDown += delegate(object sender, MouseEventArgs e) { BeginTitleDrag(e); };
+        title.MouseDown += delegate(object sender, MouseEventArgs e) { BeginTitleDrag(e); };
         titleBar.Controls.Add(title);
         titleBar.Controls.Add(close);
         Controls.Add(titleBar);
+    }
+
+    private void BeginTitleDrag(MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+            return;
+        User32.ReleaseCapture();
+        User32.SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero);
     }
 
     private NavButton CreateNavButton(string caption, int pageIndex)
