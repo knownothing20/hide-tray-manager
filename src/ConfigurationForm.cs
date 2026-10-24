@@ -228,19 +228,7 @@ internal sealed class ConfigurationForm : Form
         close.Click += delegate { Close(); };
         titleBar.Controls.Add(title);
         titleBar.Controls.Add(close);
-        titleBar.MouseDown += delegate(object sender, MouseEventArgs e) {
-            if (e.Button == MouseButtons.Left) DragWindow(Handle);
-        };
-        title.MouseDown += delegate(object sender, MouseEventArgs e) {
-            if (e.Button == MouseButtons.Left) DragWindow(Handle);
-        };
         Controls.Add(titleBar);
-    }
-
-    private static void DragWindow(IntPtr handle)
-    {
-        User32.ReleaseCapture();
-        User32.SendMessage(handle, 0xA1, IntPtr.Zero, new IntPtr(2));
     }
 
     private NavButton CreateNavButton(string caption, int pageIndex)
@@ -468,6 +456,32 @@ internal sealed class ConfigurationForm : Form
     }
 
     private bool clampingToScreen;
+
+    private const int WmNcHitTest = 0x84;
+    private const int HitTestClient = 1;
+    private const int HitTestCaption = 2;
+
+    // 无边框窗口的标题条（顶部 44×uiScale 逻辑像素，右侧关闭按钮除外）通过
+    // 命中测试返回 HTCAPTION，交给系统原生拖动——比 ReleaseCapture 消息 hack 稳。
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmNcHitTest)
+        {
+            base.WndProc(ref m);
+            if (m.Result == (IntPtr)HitTestClient)
+            {
+                int screenX = (short)(m.LParam.ToInt32() & 0xFFFF);
+                int screenY = (short)((m.LParam.ToInt32() >> 16) & 0xFFFF);
+                var client = PointToClient(new Point(screenX, screenY));
+                int barHeight = (int)(44 * uiScale);
+                int closeButtonWidth = (int)(44 * uiScale);
+                if (client.Y >= 0 && client.Y < barHeight && client.X < Width - closeButtonWidth)
+                    m.Result = (IntPtr)HitTestCaption;
+            }
+            return;
+        }
+        base.WndProc(ref m);
+    }
 
     // 无边框窗口可被拖到屏幕边缘外，导致表格最右列/按钮"显示不全"；
     // 位置变化时把窗口钳回当前屏幕的工作区内（Screen.FromControl 跨屏拖动时跟随目标屏）。
