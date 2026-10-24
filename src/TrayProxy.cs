@@ -19,6 +19,8 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // 高 DPI 屏上按真实 DPI 渲染（清晰），布局由窗体 AutoScaleMode.Dpi 缩放。
+        User32.SetProcessDPIAware();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new TrayProxyContext());
@@ -61,6 +63,10 @@ internal sealed class TrayProxyContext : ApplicationContext
 
         foreach (var tray in appTrays)
             tray.StartIfConfigured();
+
+        // 支持 --config 参数直接打开配置窗口（也便于自动化验证界面）。
+        if (Environment.GetCommandLineArgs().Any(arg => arg.Equals("--config", StringComparison.OrdinalIgnoreCase)))
+            OpenConfiguration();
     }
 
     private void LoadConfig()
@@ -817,6 +823,9 @@ internal static class User32
 
     [DllImport("user32.dll")]
     public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
 
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);

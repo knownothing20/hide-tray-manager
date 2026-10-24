@@ -153,6 +153,7 @@ internal sealed class ConfigurationForm : Form
     private readonly Button addButton = new Button { Text = "加入最小化托盘" };
     private readonly List<NavButton> navButtons = new List<NavButton>();
     private int activePage;
+    private float uiScale = 1f;
     private bool loadingTable;
     private bool updatingEditor;
     private bool scanned;
@@ -169,15 +170,34 @@ internal sealed class ConfigurationForm : Form
         FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         MinimizeBox = false;
+        // 布局按 96 DPI 设计；进程已声明 DPI 感知，字体(point)随 DPI 自动放大，
+        // 几何尺寸在控件树构建完成后按 uiScale 统一 Scale（纯代码窗体没有
+        // 设计器基准，AutoScaleMode.Dpi 不生效）。
+        AutoScaleMode = AutoScaleMode.None;
         BackColor = UiTheme.Window;
         ForeColor = UiTheme.Text;
+        using (var graphics = CreateGraphics())
+        {
+            float dpi = Math.Max(1f, graphics.DpiX / 96f);
+            var area = Screen.PrimaryScreen.WorkingArea;
+            float fit = Math.Min(area.Width * 0.96f / 980f, area.Height * 0.94f / 680f);
+            uiScale = Math.Max(0.8f, Math.Min(dpi, fit));
+        }
 
         BuildTitleBar();
         BuildSidebar();
         BuildBottomBar();
         BuildContent();
 
-        SizeChanged += delegate { UiTheme.ApplyRoundedRegion(this, 12); };
+        if (uiScale != 1f)
+        {
+            Scale(new SizeF(uiScale, uiScale));
+            // CenterScreen 按缩放前的尺寸定位，放大后可能越界；缩放后重新居中。
+            StartPosition = FormStartPosition.Manual;
+            var area = Screen.PrimaryScreen.WorkingArea;
+            Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + Math.Max(0, (area.Height - Height) / 2));
+        }
+        SizeChanged += delegate { UiTheme.ApplyRoundedRegion(this, (int)(12 * uiScale)); };
         ReadConfig();
         Shown += delegate { ShowPage(0); };
         FormClosing += delegate(object sender, FormClosingEventArgs e) {
@@ -260,7 +280,7 @@ internal sealed class ConfigurationForm : Form
         UiTheme.StyleButton(toggleEditor, false);
         toggleEditor.Click += delegate {
             editorPanel.Visible = !editorPanel.Visible;
-            editorPanel.Height = editorPanel.Visible ? 272 : 0;
+            editorPanel.Height = editorPanel.Visible ? (int)(272 * uiScale) : 0;
             toggleEditor.Text = editorPanel.Visible ? "收起配置文件" : "展开配置文件";
         };
         var saveConfig = new Button { Text = "保存并应用", AutoSize = true };
@@ -310,7 +330,7 @@ internal sealed class ConfigurationForm : Form
         editorPanel.Visible = false;
         editorPanel.BackColor = UiTheme.Surface;
         editorPanel.Padding = new Padding(1);
-        editorPanel.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(editorPanel, 10); };
+        editorPanel.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(editorPanel, (int)(10 * uiScale)); };
         var editorHeader = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = UiTheme.GridHeader, Padding = new Padding(14, 0, 12, 0) };
         var editorTitle = new Label {
             Dock = DockStyle.Fill, Text = "配置文件（INI）", ForeColor = UiTheme.Text,
@@ -350,7 +370,7 @@ internal sealed class ConfigurationForm : Form
         contentCard.Dock = DockStyle.Fill;
         contentCard.BackColor = UiTheme.Surface;
         contentCard.Padding = new Padding(12);
-        contentCard.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(contentCard, 10); };
+        contentCard.SizeChanged += delegate { UiTheme.ApplyRoundedRegion(contentCard, (int)(10 * uiScale)); };
         configuredPage.Dock = DockStyle.Fill;
         discoveryPage.Dock = DockStyle.Fill;
         discoveryPage.Visible = false;
