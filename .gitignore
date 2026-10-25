@@ -8,3 +8,6 @@
 .vscode/
 Thumbs.db
 Desktop.ini
+
+# Build/deploy backups of the merged workspace layout
+/backup/

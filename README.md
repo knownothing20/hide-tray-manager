@@ -22,20 +22,24 @@
 ## 目录
 
 ```text
-HideTrayManager.exe          编译好的发布版本
-build.ps1                   编译脚本
-test.ps1                    功能测试脚本
+HideTrayManager.exe          编译好的发布版本（一键构建部署后永远最新）
 src/
-  TrayProxy.cs              托盘和窗口管理源码
-  AppConfiguration.cs       配置路径和安全默认配置
-  ConfigurationForm.cs      配置界面与窗口探测
-  ProcessSnapshot.cs        原生进程快照与目标筛选
-  Build-UmbrellaIcon.ps1     PNG 转 ICO 工具
+  TrayProxy.cs               托盘和窗口管理源码
+  AppConfiguration.cs        配置路径和安全默认配置
+  ConfigurationForm.cs       配置界面与窗口探测
+  ProcessSnapshot.cs         原生进程快照与目标筛选
   assets/
-    tray.ico                发布版本图标
-    tray.png                图标原图
-local/                      本机配置和备份，不上传 GitHub
-  HideTrayManager.ini       私人应用配置
+    tray.ico                 发布版本图标
+    tray.png                 图标原图
+  tests/
+    SmokeTests.cs            功能烟雾测试
+tools/
+  build.ps1                  一键构建部署（停实例→备份→编译→替换→重启）
+  test.ps1                   功能测试脚本
+  Build-UmbrellaIcon.ps1     PNG 转 ICO 工具
+backup/                      本机构建/部署备份，不上传 GitHub
+local/                       本机配置和备份，不上传 GitHub
+  HideTrayManager.ini        私人应用配置
 ```
 
 ## 使用
@@ -97,15 +101,15 @@ IconPath=
 需要 Windows 和 .NET Framework 4.x。使用 Windows PowerShell，在仓库目录执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-输出为根目录的 `HideTrayManager.exe`。编译前请退出正在运行的管理器。编译脚本不自动启动程序，不修改私人配置。
+输出为根目录的 `HideTrayManager.exe`。脚本会自动停止正在运行的管理器、把旧版备份到 `backup/`、编译替换并重启，不修改私人配置。
 
 如需从 PNG 重新生成图标：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\src\Build-UmbrellaIcon.ps1 -SourcePng .\src\assets\tray.png -OutputIcon .\src\assets\tray.ico
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-UmbrellaIcon.ps1 -SourcePng .\src\assets\tray.png -OutputIcon .\src\assets\tray.ico
 ```
 
 ## 隐私和本机配置
@@ -123,5 +127,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\src\Build-UmbrellaIcon.ps1
 在 Windows 桌面会话运行以下命令。测试会短暂打开合成测试窗口，验证探测、最小化隐藏、恢复窗口、配置编辑、外部修改保护和空配置停止轮询。测试配置、备份和经过脱敏的界面预览仅写入 `local/tests/`。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\test.ps1
 ```
