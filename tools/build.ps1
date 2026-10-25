@@ -21,6 +21,10 @@ if (Test-Path $rootExe) {
     Write-Output "== backup current exe =="
     New-Item -ItemType Directory -Force (Join-Path $repo 'backup') | Out-Null
     Copy-Item $rootExe (Join-Path $repo ("backup\HideTrayManager-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".exe")) -Force
+    # 只保留最近 2 个构建备份，更旧的删除；版本回溯走 GitHub Releases/提交历史。
+    Get-ChildItem (Join-Path $repo 'backup') -Filter 'HideTrayManager-*.exe' |
+        Sort-Object Name -Descending | Select-Object -Skip 2 |
+        ForEach-Object { Remove-Item $_.FullName -Force }
 }
 
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'

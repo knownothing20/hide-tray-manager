@@ -19,6 +19,12 @@ local\                私有配置 HideTrayManager.ini、测试产物、历史�
 - 发布模式与 SysFloat 一致：**源码进仓库、成品进 GitHub Releases、本机根目录 exe 常新**。exe 已被 .gitignore（`*.exe`）排除，不要提交。
 - 任何推送前运行 SysFloat 侧同款隐私意识检查：确认没有把 `local\`、真实配置、内部记录加入提交。
 
+## 备份与空间纪律（用户明确要求）
+
+- **`backup\` 只保留最近 2 个构建备份**：`tools\build.ps1` 每次生成新备份后自动删除更旧的，使目录恒 ≤2 项。旧版本回溯一律走 GitHub（Release 附件 + 提交历史），不在本机囤积。
+- 构建中间产物（`local\build`）用完即弃（脚本已自动清理）；`local\tests\` 的历史预览目录可定期清理。
+- 每隔一段时间用 `du -sh` 检查总量，异常膨胀（>200MB）时按上述规则清理。
+
 ## 构建与部署（一条命令）
 
 ```powershell
