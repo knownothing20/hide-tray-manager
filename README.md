@@ -22,7 +22,7 @@
 ## 目录
 
 ```text
-HideTrayManager.exe          编译好的发布版本（一键构建部署后永远最新）
+HideTrayManager.exe          直接运行的程序（不进 git：来自 Releases 或本地构建部署）
 src/
   TrayProxy.cs               托盘和窗口管理源码
   AppConfiguration.cs        配置路径和安全默认配置
@@ -42,10 +42,11 @@ local/                       本机配置和备份，不上传 GitHub
   HideTrayManager.ini        私人应用配置
 ```
 
-## 使用
+## 下载和使用
 
-1. 下载仓库 ZIP 并解压到可写目录，或克隆仓库。
-2. 运行 `HideTrayManager.exe`，首次运行会生成 `local/HideTrayManager.ini`。加 `--config` 参数启动可直接打开配置窗口。
+前往 [Releases](https://github.com/knownothing20/hide-tray-manager/releases/latest) 下载 `HideTrayManager.exe`（约 90 KB，单文件免安装，需要 64 位 Windows；.NET Framework 4.x 为系统自带）。也可从源码一键构建部署：`tools\build.ps1`。
+
+1. 运行 `HideTrayManager.exe`，首次运行会生成 `local/HideTrayManager.ini`。加 `--config` 参数启动可直接打开配置窗口。
 3. 右键管理器托盘图标，选择 **配置与窗口探测...**。
 4. 默认的 **已配置软件** 表格直接加载配置文件，包含未运行或已禁用的软件。可编辑名称、进程名和常用选项，点击 **编辑路径与筛选...** 修改完整路径和窗口筛选；**移除所选软件**（或表格右键）删除所选配置段。
 5. 点击 **加载配置** 可重新读取本机配置到表格，修改后点击 **保存并应用** 生效。

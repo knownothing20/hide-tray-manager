@@ -11,3 +11,6 @@ Desktop.ini
 
 # Build/deploy backups of the merged workspace layout
 /backup/
+
+# Downloadable executables belong in GitHub Releases
+*.exe

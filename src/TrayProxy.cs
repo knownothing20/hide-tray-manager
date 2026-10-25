@@ -11,8 +11,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyTitle("Hide Tray Manager")]
 [assembly: System.Reflection.AssemblyDescription("Manage Windows application windows from the system tray.")]
 [assembly: System.Reflection.AssemblyProduct("Hide Tray Manager")]
-[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.1.0.0")]
 
 internal static class Program
 {
